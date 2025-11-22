@@ -303,7 +303,6 @@ struct BehaviorArgs {
 }
 
 impl OutputFormat {
-
     fn is_github_actions() -> bool {
         std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
     }
@@ -786,8 +785,7 @@ impl CheckArgs {
             )?;
         } else {
             let effective_format = self.output.output_format.get_effective_format(false);
-            effective_format
-                .write_errors_to_console(relative_to.as_path(), &errors.shown)?;
+            effective_format.write_errors_to_console(relative_to.as_path(), &errors.shown)?;
         }
         memory_trace.stop();
         if let Some(limit) = self.output.count_errors {
