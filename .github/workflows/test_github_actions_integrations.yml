@@ -1,0 +1,30 @@
+name: Test Github Actions Integration
+
+on:
+  pull_request:
+    paths:
+      - 'test_github_actions_demo.py'
+      - '.github/workflows/test_github_actions_integration.yml'
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2025-08-01
+
+      - name: Set up rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: pyrefly
+
+      - name: Build Pyrefly
+        run: cargo build --release
+
+      - name: Run Pyrefly type check (with Github Actions annotations)
+        run: ./target/release/pyrefly check test_github_actions_demo.py
+        continue-on-error: true

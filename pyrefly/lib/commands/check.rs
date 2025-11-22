@@ -129,6 +129,9 @@ enum OutputFormat {
     Json,
     /// Only show error count, omitting individual errors
     OmitErrors,
+
+    /// Github Actions workflow command output
+    GithubActions,
 }
 
 /// Main arguments for Pyrefly type checker
@@ -300,6 +303,23 @@ struct BehaviorArgs {
 }
 
 impl OutputFormat {
+
+    fn is_github_actions() -> bool {
+        std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+    }
+
+    fn get_effective_format(&self, output_to_file: bool) -> Self {
+        if output_to_file {
+            // Don't use Github Actions format when outputting to a file
+            self.clone()
+        } else if Self::is_github_actions() {
+            // Auto-detect Github Actions and use that format
+            Self::GithubActions
+        } else {
+            self.clone()
+        }
+    }
+
     fn write_error_text_to_file(
         path: &Path,
         relative_to: &Path,
@@ -374,6 +394,7 @@ impl OutputFormat {
             Self::FullText => Self::write_error_text_to_file(path, relative_to, errors, true),
             Self::Json => Self::write_error_json_to_file(path, relative_to, errors),
             Self::OmitErrors => Ok(()),
+            Self::GithubActions => Self::write_error_text_to_file(path, relative_to, errors, true),
         }
     }
 
@@ -383,6 +404,15 @@ impl OutputFormat {
             Self::FullText => Self::write_error_text_to_console(relative_to, errors, true),
             Self::Json => Self::write_error_json_to_console(relative_to, errors),
             Self::OmitErrors => Ok(()),
+            Self::GithubActions => {
+                // Emit Github Actions workflow commands for PR annotations
+                for error in errors {
+                    error.print_github_actions(relative_to);
+                }
+                // Also emit the regular text output so users can see the full list
+                Self::write_error_text_to_console(relative_to, errors, true)?;
+                Ok(())
+            }
         }
     }
 }
@@ -755,8 +785,8 @@ impl CheckArgs {
                 &errors.shown,
             )?;
         } else {
-            self.output
-                .output_format
+            let effective_format = self.output.output_format.get_effective_format(false);
+            effective_format
                 .write_errors_to_console(relative_to.as_path(), &errors.shown)?;
         }
         memory_trace.stop();
