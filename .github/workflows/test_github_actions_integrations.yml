@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - 'test_github_actions_demo.py'
-      - '.github/workflows/test_github_actions_integration.yml'
+      - '.github/workflows/test_github_actions_integrations.yml'
 
 jobs:
   typecheck:
