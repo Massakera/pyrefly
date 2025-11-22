@@ -307,12 +307,14 @@ impl OutputFormat {
         std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
     }
 
+    fn is_default(&self) -> bool {
+        matches!(self, Self::FullText)
+    }
+
     fn get_effective_format(&self, output_to_file: bool) -> Self {
         if output_to_file {
-            // Don't use Github Actions format when outputting to a file
             self.clone()
-        } else if Self::is_github_actions() {
-            // Auto-detect Github Actions and use that format
+        } else if Self::is_github_actions() && self.is_default() {
             Self::GithubActions
         } else {
             self.clone()
