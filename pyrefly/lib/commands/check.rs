@@ -325,13 +325,13 @@ impl OutputFormat {
     }
 
     fn is_github_actions() -> bool {
-        let override_value = std::env::var("PYREFLY_GITHUB_ANNOTATIONS")
-            .ok()
+        let override_binding = std::env::var("PYREFLY_GITHUB_ANNOTATIONS").ok();
+        let override_value = override_binding
             .as_deref()
             .map(|s| s.trim())
             .filter(|s| !s.is_empty());
-        let github_actions_env = std::env::var("GITHUB_ACTIONS")
-            .ok()
+        let github_actions_binding = std::env::var("GITHUB_ACTIONS").ok();
+        let github_actions_env = github_actions_binding
             .as_deref()
             .map(|s| s.trim())
             .filter(|s| !s.is_empty());
