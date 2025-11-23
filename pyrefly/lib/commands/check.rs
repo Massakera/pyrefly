@@ -129,6 +129,9 @@ enum OutputFormat {
     Json,
     /// Only show error count, omitting individual errors
     OmitErrors,
+
+    /// Github Actions workflow command output
+    GithubActions,
 }
 
 /// Main arguments for Pyrefly type checker
@@ -300,6 +303,55 @@ struct BehaviorArgs {
 }
 
 impl OutputFormat {
+    fn parse_env_bool(raw: &str) -> Option<bool> {
+        match raw.to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => Some(true),
+            "0" | "false" | "no" | "off" => Some(false),
+            _ => None,
+        }
+    }
+
+    fn github_actions_enabled(
+        override_value: Option<&str>,
+        github_actions_env: Option<&str>,
+    ) -> bool {
+        if let Some(value) = override_value.and_then(Self::parse_env_bool) {
+            return value;
+        }
+        if let Some(value) = github_actions_env.and_then(Self::parse_env_bool) {
+            return value;
+        }
+        false
+    }
+
+    fn is_github_actions() -> bool {
+        let override_binding = std::env::var("PYREFLY_GITHUB_ANNOTATIONS").ok();
+        let override_value = override_binding
+            .as_deref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty());
+        let github_actions_binding = std::env::var("GITHUB_ACTIONS").ok();
+        let github_actions_env = github_actions_binding
+            .as_deref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty());
+        Self::github_actions_enabled(override_value, github_actions_env)
+    }
+
+    fn is_default(&self) -> bool {
+        matches!(self, Self::FullText)
+    }
+
+    fn get_effective_format(&self, output_to_file: bool) -> Self {
+        if output_to_file {
+            self.clone()
+        } else if Self::is_github_actions() && self.is_default() {
+            Self::GithubActions
+        } else {
+            self.clone()
+        }
+    }
+
     fn write_error_text_to_file(
         path: &Path,
         relative_to: &Path,
@@ -374,6 +426,7 @@ impl OutputFormat {
             Self::FullText => Self::write_error_text_to_file(path, relative_to, errors, true),
             Self::Json => Self::write_error_json_to_file(path, relative_to, errors),
             Self::OmitErrors => Ok(()),
+            Self::GithubActions => Self::write_error_text_to_file(path, relative_to, errors, true),
         }
     }
 
@@ -383,6 +436,15 @@ impl OutputFormat {
             Self::FullText => Self::write_error_text_to_console(relative_to, errors, true),
             Self::Json => Self::write_error_json_to_console(relative_to, errors),
             Self::OmitErrors => Ok(()),
+            Self::GithubActions => {
+                // Emit Github Actions workflow commands for PR annotations
+                for error in errors {
+                    error.print_github_actions(relative_to);
+                }
+                // Also emit the regular text output so users can see the full list
+                Self::write_error_text_to_console(relative_to, errors, true)?;
+                Ok(())
+            }
         }
     }
 }
@@ -392,6 +454,34 @@ pub struct Handles {
     /// A mapping from a file to all other information needed to create a `Handle`.
     /// The value type is basically everything else in `Handle` except for the file path.
     path_data: HashSet<ModulePath>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OutputFormat;
+
+    #[test]
+    fn github_actions_override_disables_annotations() {
+        assert!(!OutputFormat::github_actions_enabled(
+            Some("false"),
+            Some("true")
+        ));
+    }
+
+    #[test]
+    fn github_actions_override_enables_annotations() {
+        assert!(OutputFormat::github_actions_enabled(Some("1"), None));
+    }
+
+    #[test]
+    fn github_actions_env_enables_when_true() {
+        assert!(OutputFormat::github_actions_enabled(None, Some("true")));
+    }
+
+    #[test]
+    fn github_actions_defaults_to_false_on_unrecognized_values() {
+        assert!(!OutputFormat::github_actions_enabled(None, Some("maybe")));
+    }
 }
 
 impl Handles {
@@ -755,9 +845,8 @@ impl CheckArgs {
                 &errors.shown,
             )?;
         } else {
-            self.output
-                .output_format
-                .write_errors_to_console(relative_to.as_path(), &errors.shown)?;
+            let effective_format = self.output.output_format.get_effective_format(false);
+            effective_format.write_errors_to_console(relative_to.as_path(), &errors.shown)?;
         }
         memory_trace.stop();
         if let Some(limit) = self.output.count_errors {

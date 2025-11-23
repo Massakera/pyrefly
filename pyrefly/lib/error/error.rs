@@ -119,6 +119,45 @@ impl Error {
         }
     }
 
+    fn escape_workflow_command(s: &str) -> String {
+        s.replace('%', "%25")
+            .replace("::", "%3A%3A")
+            .replace('\r', "%0D")
+            .replace('\n', "%0A")
+    }
+
+    /// Print error in Github Actions workflow command format
+    /// Format: ::error file={name},line={line},endLine={endLine},col={col},endColumn={endCol},title={title}::{message}
+    pub fn print_github_actions(&self, project_root: &Path) {
+        if !self.severity.is_enabled() {
+            return;
+        }
+
+        let path = self.path().as_path();
+        let path = path.strip_prefix(project_root).unwrap_or(path);
+        let path_str = path.to_string_lossy();
+
+        let start_line = self.display_range.start.line_within_cell().get();
+        let start_col = self.display_range.start.column().get();
+        let end_line = self.display_range.end.line_within_cell().get();
+        let end_col = self.display_range.end.column().get();
+
+        // Github Actions workflow commands use "error" or "warning" level
+        let level = match self.severity {
+            Severity::Error => "error",
+            Severity::Warn => "warning",
+            _ => "notice",
+        };
+
+        let escaped_title = Self::escape_workflow_command(self.error_kind.to_name());
+        let escaped_message = Self::escape_workflow_command(&self.msg_header);
+
+        // Format: ::error file=path.py,line=2,endLine=2,col=5,endColumn=13,title=bad-return::bad return
+        println!(
+            "::{level} file={path_str},line={start_line},endLine={end_line},col={start_col},endColumn={end_col},title={escaped_title}::{escaped_message}",
+        );
+    }
+
     /// Return the path with a cell fragment if the error is in a notebook cell.
     fn path_string_with_fragment(&self, project_root: &Path) -> String {
         let path = self.path().as_path();
