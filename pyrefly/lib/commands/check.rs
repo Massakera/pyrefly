@@ -303,8 +303,39 @@ struct BehaviorArgs {
 }
 
 impl OutputFormat {
+    fn parse_env_bool(raw: &str) -> Option<bool> {
+        match raw.to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => Some(true),
+            "0" | "false" | "no" | "off" => Some(false),
+            _ => None,
+        }
+    }
+
+    fn github_actions_enabled(
+        override_value: Option<&str>,
+        github_actions_env: Option<&str>,
+    ) -> bool {
+        if let Some(value) = override_value.and_then(Self::parse_env_bool) {
+            return value;
+        }
+        if let Some(value) = github_actions_env.and_then(Self::parse_env_bool) {
+            return value;
+        }
+        false
+    }
+
     fn is_github_actions() -> bool {
-        std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+        let override_value = std::env::var("PYREFLY_GITHUB_ANNOTATIONS")
+            .ok()
+            .as_deref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty());
+        let github_actions_env = std::env::var("GITHUB_ACTIONS")
+            .ok()
+            .as_deref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty());
+        Self::github_actions_enabled(override_value, github_actions_env)
     }
 
     fn is_default(&self) -> bool {
@@ -423,6 +454,34 @@ pub struct Handles {
     /// A mapping from a file to all other information needed to create a `Handle`.
     /// The value type is basically everything else in `Handle` except for the file path.
     path_data: HashSet<ModulePath>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OutputFormat;
+
+    #[test]
+    fn github_actions_override_disables_annotations() {
+        assert!(!OutputFormat::github_actions_enabled(
+            Some("false"),
+            Some("true")
+        ));
+    }
+
+    #[test]
+    fn github_actions_override_enables_annotations() {
+        assert!(OutputFormat::github_actions_enabled(Some("1"), None));
+    }
+
+    #[test]
+    fn github_actions_env_enables_when_true() {
+        assert!(OutputFormat::github_actions_enabled(None, Some("true")));
+    }
+
+    #[test]
+    fn github_actions_defaults_to_false_on_unrecognized_values() {
+        assert!(!OutputFormat::github_actions_enabled(None, Some("maybe")));
+    }
 }
 
 impl Handles {
